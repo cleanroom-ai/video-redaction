@@ -28,8 +28,8 @@ jobs:
       E2E_BROWSER: chromium
       URL: ${{ github.event.inputs.url || vars.LIVE_CHECK_URL || 'https://cleanroom-ai-video-redaction.static.hf.space/' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -38,7 +38,7 @@ jobs:
       - run: npx playwright-core install --with-deps chromium
       - name: Run browser test against live Space
         run: node tests/e2e.browser.mjs "$URL"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: live-e2e-screenshots
