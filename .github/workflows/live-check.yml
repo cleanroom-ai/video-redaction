@@ -10,6 +10,8 @@ on:
   workflow_run:
     workflows: ["Deploy to Hugging Face Space"]
     types: [completed]
+  schedule:
+    - cron: "17 6 * * 1"
 
 permissions:
   contents: read
