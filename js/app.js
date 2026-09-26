@@ -1,6 +1,7 @@
 import { CATEGORIES, DEFAULT_CATEGORIES, maskPreview, prettyLabel } from "../vendor/core/rules.js";
 import { CATEGORY_COLORS } from "../vendor/core/redact.js";
-import { activeDetections, boxAt, buildTracks, downscaleGray, estimateShift, isSceneChange, mergeBoxes, sampleTimes } from "./tracker.js";
+import { ALL_FORMATS, AudioSampleSink, AudioSampleSource, BlobSource, BufferTarget, CanvasSource, Input, Output, Quality, WebMOutputFormat, canEncodeAudio, canEncodeVideo } from "../vendor/mediabunny.mjs";
+import { activeDetections, boxAt, buildTracks, clampFrameRate, downscaleGray, estimateShift, framePlan, isSceneChange, mergeBoxes, sampleTimes, verificationTimes } from "./tracker.js";
 
 const $ = (sel) => document.querySelector(sel);
 const els = {
@@ -15,7 +16,7 @@ const els = {
 const state = {
   url: null, file: null, name: "video", duration: 0, width: 0, height: 0, fps: 30,
   tracks: [], selected: new Set(), style: "black box", scanSeq: 0, workerSeq: 0, pending: new Map(), busy: false,
-  exportAbort: false, lastMetrics: null, mediaInfo: null,
+  exportAbort: false, lastMetrics: null, mediaInfo: null, scanTimes: [],
 };
 
 const worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
@@ -99,6 +100,7 @@ async function loadFile(file) {
   state.duration = Number.isFinite(els.video.duration) ? els.video.duration : (state.mediaInfo?.duration || 0);
   state.width = els.video.videoWidth || state.mediaInfo?.width || 1280;
   state.height = els.video.videoHeight || state.mediaInfo?.height || 720;
+  state.fps = clampFrameRate(state.mediaInfo?.frameRate || 30);
   els.overlay.width = state.width; els.overlay.height = state.height;
   els.drop.hidden = true; els.workspace.hidden = false;
   setStatus(`Loaded ${state.width}×${state.height}, ${state.duration.toFixed(1)}s. Sampling frames…`, "busy");
@@ -128,7 +130,8 @@ async function runScan() {
   const categories = checkedCategories();
   const customTerms = els.terms.value.split(/[,\n]/).map((t) => t.trim()).filter(Boolean);
   const options = { categories, customTerms, useNer: els.useNer.checked };
-  const times = sampleTimes(state.duration, 0.5);
+  const times = sampleTimes(state.duration);
+  state.scanTimes = times;
   const canvas = document.createElement("canvas");
   canvas.width = state.width; canvas.height = state.height;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -153,12 +156,9 @@ async function runScan() {
         scene = isSceneChange(prevGray, gray);
         if (scene) extraScenes++;
       }
-      const shouldScan = i === 0 || i === times.length - 1 || i % 3 === 0 || scene;
-      if (shouldScan) {
-        const res = await scanFrame({ data: imageData.data, width: imageData.width, height: imageData.height }, options);
-        samples.push({ t, detections: res.detections, shift });
-        scannedFrames++;
-      }
+      const res = await scanFrame({ data: imageData.data, width: imageData.width, height: imageData.height }, options);
+      samples.push({ t, detections: res.detections, shift });
+      scannedFrames++;
       prevGray = gray;
     }
     const manual = state.tracks.filter((t) => t.source === "you");
@@ -167,7 +167,7 @@ async function runScan() {
     state.selected = new Set(state.tracks.map((t) => t.id));
     const elapsed = (performance.now() - started) / 1000;
     state.lastMetrics = { scanSeconds: elapsed, scanRate: state.duration / Math.max(0.1, elapsed) };
-    setStatus(`Found ${state.tracks.length} tracked item${state.tracks.length === 1 ? "" : "s"} from ${scannedFrames}/${times.length} sampled frames in ${elapsed.toFixed(1)}s (${state.lastMetrics.scanRate.toFixed(2)}× realtime). ${extraScenes} scene-change burst${extraScenes === 1 ? "" : "s"} noted.`, state.tracks.length ? "ok" : "warn");
+    setStatus(`Found ${state.tracks.length} tracked item${state.tracks.length === 1 ? "" : "s"} from ${scannedFrames}/${times.length} OCR-sampled frames in ${elapsed.toFixed(1)}s (${state.lastMetrics.scanRate.toFixed(2)}× realtime). ${extraScenes} scene-change frame${extraScenes === 1 ? "" : "s"} noted.`, state.tracks.length ? "ok" : "warn");
   } catch (err) {
     setStatus(`Scan failed: ${err.message}. You can still draw manual boxes.`, "warn");
   } finally {
@@ -287,46 +287,78 @@ async function exportVideo() {
   els.cancel.hidden = false; els.download.hidden = true; els.verify.textContent = ""; els.bar.style.width = "0%";
   const canvas = els.exportCanvas; canvas.width = state.width; canvas.height = state.height;
   const ctx = canvas.getContext("2d", { alpha: false });
-  const mime = await chooseMime();
-  const chunks = [];
-  const exportFps = Math.min(12, state.fps);
-  const stream = canvas.captureStream(exportFps);
-  const recorder = new MediaRecorder(stream, { mimeType: mime.type, videoBitsPerSecond: 5_000_000 });
-  recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
   const started = performance.now();
   try {
-    await seek(0);
-    drawRedactedFrame(ctx, els.video, 0);
-    recorder.start(500);
-    recorder.onerror = () => { throw recorder.error || new Error("MediaRecorder failed"); };
     const duration = Number.isFinite(state.duration) && state.duration > 0 ? state.duration : els.video.duration;
-    const frames = Math.max(1, Math.ceil(duration * exportFps));
-    for (let f = 0; f <= frames; f++) {
-      if (state.exportAbort) throw new Error("Export canceled");
-      const t = Math.min(Math.max(0, duration - 0.02), f / exportFps);
-      await seek(t);
-      drawRedactedFrame(ctx, els.video, t);
-      const p = Math.min(1, f / Math.max(1, frames));
-      els.bar.style.width = `${(p * 100).toFixed(1)}%`;
-      const elapsed = (performance.now() - started) / 1000;
-      const eta = p > 0.02 ? elapsed * (1 - p) / p : 0;
-      els.exportStatus.textContent = `Encoding ${mime.label}… ${(p * 100).toFixed(0)}%${eta ? ` · ETA ${eta.toFixed(0)}s` : ""}`;
-      await new Promise((r) => setTimeout(r, 1000 / exportFps));
-    }
-    await new Promise((resolve) => { recorder.onstop = resolve; recorder.stop(); });
-    stream.getTracks().forEach((t) => t.stop());
-    const blob = new Blob(chunks, { type: mime.type });
+    const result = await encodeWithMediabunny({ canvas, ctx, duration, started });
+    const { blob, label, audioStatus } = result;
     const elapsed = (performance.now() - started) / 1000;
-    state.lastMetrics = { ...(state.lastMetrics || {}), exportSeconds: elapsed, exportRate: state.duration / Math.max(0.1, elapsed), codec: mime.label };
-    els.exportStatus.textContent = `Encoded ${mb(blob.size)} MB ${mime.label} in ${elapsed.toFixed(1)}s (${state.lastMetrics.exportRate.toFixed(2)}× realtime). Audio was not copied by this fallback exporter.`;
+    state.lastMetrics = { ...(state.lastMetrics || {}), exportSeconds: elapsed, exportRate: state.duration / Math.max(0.1, elapsed), codec: label };
+    els.exportStatus.textContent = `Encoded ${mb(blob.size)} MB ${label} in ${elapsed.toFixed(1)}s (${state.lastMetrics.exportRate.toFixed(2)}× realtime). ${audioStatus}`;
     const url = URL.createObjectURL(blob);
-    els.download.href = url; els.download.download = `${state.name}-redacted.${mime.ext}`; els.download.hidden = false;
+    els.download.href = url; els.download.download = `${state.name}-redacted.webm`; els.download.hidden = false;
     await verifyOutput(blob);
   } catch (err) {
     els.exportStatus.textContent = err.message;
     els.verify.textContent = "";
   } finally {
     els.video.pause(); els.cancel.hidden = true; state.busy = false; disableActions(false); drawOverlay();
+  }
+}
+
+async function encodeWithMediabunny({ canvas, ctx, duration, started }) {
+  const fps = clampFrameRate(state.fps);
+  const frames = framePlan(duration, fps);
+  const videoCodec = await chooseVideoCodec();
+  const target = new BufferTarget();
+  const output = new Output({ format: new WebMOutputFormat(), target });
+  const videoSource = new CanvasSource(canvas, { codec: videoCodec, quality: new Quality("high"), keyFrameInterval: 2 });
+  output.addVideoTrack(videoSource, { frameRate: fps, maximumPacketCount: frames.length });
+
+  const input = new Input({ source: new BlobSource(state.file), formats: ALL_FORMATS });
+  const audioTrack = await input.getPrimaryAudioTrack().catch(() => null);
+  let audioSource = null;
+  let audioStatus = state.mediaInfo?.hasAudio ? "Audio could not be decoded and was not copied." : "Input had no audio track.";
+  if (audioTrack && await audioTrack.canDecode().catch(() => false) && await canEncodeAudio("opus").catch(() => false)) {
+    audioSource = new AudioSampleSource({ codec: "opus", quality: new Quality("high") });
+    output.addAudioTrack(audioSource);
+    audioStatus = "Audio preserved by re-encoding to Opus; audio content itself is not redacted.";
+  }
+
+  await output.start();
+  const audioPromise = audioSource ? pipeAudio(audioTrack, audioSource, duration) : Promise.resolve();
+  try {
+    for (const frame of frames) {
+      if (state.exportAbort) throw new Error("Export canceled");
+      await seek(frame.timestamp);
+      drawRedactedFrame(ctx, els.video, frame.timestamp);
+      await videoSource.add(frame.timestamp, frame.duration, { keyFrame: frame.index === 0 || frame.index % Math.max(1, Math.round(fps * 2)) === 0 });
+      const p = (frame.index + 1) / frames.length;
+      els.bar.style.width = `${(p * 100).toFixed(1)}%`;
+      const elapsed = (performance.now() - started) / 1000;
+      const eta = p > 0.02 ? elapsed * (1 - p) / p : 0;
+      els.exportStatus.textContent = `Encoding VP${videoCodec.slice(2)}/WebM… ${(p * 100).toFixed(0)}%${eta ? ` · ETA ${eta.toFixed(0)}s` : ""}`;
+    }
+    await audioPromise;
+    await output.finalize();
+  } catch (err) {
+    await output.cancel().catch(() => {});
+    throw err;
+  } finally {
+    await input.dispose?.();
+  }
+  return { blob: new Blob([target.buffer], { type: "video/webm" }), label: `VP${videoCodec.slice(2)}/Opus WebM`, audioStatus };
+}
+
+async function pipeAudio(audioTrack, audioSource, duration) {
+  const sink = new AudioSampleSink(audioTrack);
+  const first = await audioTrack.getFirstTimestamp().catch(() => 0);
+  for await (const sample of sink.samples(first, first + duration)) {
+    const shifted = sample.timestamp - first;
+    if (shifted >= duration + 0.05) { sample.close(); continue; }
+    sample.setTimestamp(Math.max(0, shifted));
+    await audioSource.add(sample);
+    sample.close();
   }
 }
 
@@ -363,21 +395,11 @@ function renderRedactions(ctx, detections, style) {
   ctx.imageSmoothingEnabled = true;
 }
 
-async function chooseMime() {
-  let avc = false;
-  if (globalThis.VideoEncoder?.isConfigSupported) {
-    avc = (await VideoEncoder.isConfigSupported({ codec: "avc1.42E01E", width: state.width, height: state.height, bitrate: 5_000_000, framerate: state.fps }).catch(() => ({ supported: false }))).supported;
+async function chooseVideoCodec() {
+  for (const codec of ["vp9", "vp8"]) {
+    if (await canEncodeVideo(codec, { width: state.width, height: state.height, quality: new Quality("high") }).catch(() => false)) return codec;
   }
-  const candidates = avc ? [
-    { type: 'video/mp4;codecs="avc1.42E01E"', ext: "mp4", label: "H.264/MP4" },
-    { type: 'video/webm;codecs="vp9"', ext: "webm", label: "VP9/WebM" },
-    { type: 'video/webm;codecs="vp8"', ext: "webm", label: "VP8/WebM" },
-  ] : [
-    { type: 'video/webm;codecs="vp9"', ext: "webm", label: "VP9/WebM" },
-    { type: 'video/webm;codecs="vp8"', ext: "webm", label: "VP8/WebM" },
-    { type: "video/webm", ext: "webm", label: "WebM" },
-  ];
-  return candidates.find((c) => MediaRecorder.isTypeSupported(c.type)) || { type: "video/webm", ext: "webm", label: "WebM" };
+  throw new Error("This browser cannot encode VP8/VP9 WebM with WebCodecs.");
 }
 
 async function verifyOutput(blob) {
@@ -386,21 +408,21 @@ async function verifyOutput(blob) {
   await waitLoaded(video);
   const canvas = document.createElement("canvas"); canvas.width = state.width; canvas.height = state.height;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  const chosen = state.tracks.filter((t) => state.selected.has(t.id));
-  const times = [...new Set(chosen.slice(0, 2).map((t) => Number(Math.min(t.end - 0.05, t.start + 0.1).toFixed(2))))];
-  const texts = chosen.map((t) => String(t.text || "").toLowerCase()).filter((t) => t.length >= 4);
   const failures = [];
   const outDuration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : state.duration;
-  const scale = outDuration / Math.max(0.1, state.duration);
+  const times = verificationTimes(state.duration, outDuration, state.scanTimes);
+  let prevGray = null;
+  let sceneFrames = 0;
   for (const t of times) {
-    const outT = t * scale;
-    await new Promise((resolve) => { const done = () => { video.removeEventListener("seeked", done); resolve(); }; video.addEventListener("seeked", done, { once: true }); video.currentTime = Math.min(Math.max(0, outT), Math.max(0, outDuration - 0.05)); });
+    await new Promise((resolve) => { const done = () => { video.removeEventListener("seeked", done); resolve(); }; video.addEventListener("seeked", done, { once: true }); video.currentTime = Math.min(Math.max(0, t), Math.max(0, outDuration - 0.05)); });
     ctx.drawImage(video, 0, 0, state.width, state.height);
     const img = ctx.getImageData(0, 0, state.width, state.height);
+    const gray = downscaleGray(img, 96, Math.max(1, Math.round(96 * state.height / state.width)));
+    if (prevGray && isSceneChange(prevGray, gray)) sceneFrames++;
+    prevGray = gray;
     const res = await scanFrame({ data: img.data, width: img.width, height: img.height }, { categories: checkedCategories(), customTerms: [], useNer: false });
     for (const d of res.detections) {
-      const got = String(d.text || "").toLowerCase();
-      if (texts.some((x) => x && (got.includes(x) || x.includes(got)))) failures.push(`${prettyLabel(d.label)} at ${fmt(t)}`);
+      failures.push(`${prettyLabel(d.label)} at ${fmt(t)}`);
     }
   }
   URL.revokeObjectURL(video.src);
@@ -409,7 +431,7 @@ async function verifyOutput(blob) {
     els.verify.textContent = `Verification found possible readable items: ${[...new Set(failures)].join(", ")}`;
   } else {
     els.verify.className = "verify ok";
-    els.verify.textContent = `✓ Verified: none of the ${chosen.length} redacted items is readable in the output`;
+    els.verify.textContent = `✓ Verified: no sensitive items found in ${times.length} decoded output frame${times.length === 1 ? "" : "s"}${sceneFrames ? ` (${sceneFrames} scene-change frame${sceneFrames === 1 ? "" : "s"})` : ""}`;
   }
 }
 

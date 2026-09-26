@@ -48,9 +48,9 @@ Video Redactor is a 100% client-side cleanroom-ai app for developers and PMs who
 
 - Drop MP4/WebM or try the bundled synthetic example (fake data only).
 - Uses the shared [`@cleanroom-ai/core`](https://github.com/cleanroom-ai/cleanroom-core) OCR/rules/name/face engine.
-- Samples every ~0.5s and tracks boxes between samples with IoU, text similarity, scroll-shift estimation, and face interpolation.
+- Samples every ~0.25s, OCRs every sampled frame, and tracks boxes between samples with IoU, text similarity, scroll-shift estimation, and face interpolation.
 - Review numbered boxes over the video, timeline bars, per-track checkboxes, masked previews, and manual boxes.
-- Exports a redacted WebM/MP4 candidate in-browser and verifies sampled output frames with OCR/rules.
+- Exports a redacted WebM in-browser with Mediabunny/WebCodecs, preserves the input audio track by re-encoding it to Opus, and verifies decoded output frames with OCR/rules.
 - Strict CSP: only this origin plus Hugging Face's `*.hf.co` large-file CDN; no analytics, external fonts, uploads, or server processing.
 
 ## How it works
@@ -61,7 +61,7 @@ video ─► browser decode + Mediabunny container probe
       ├► @cleanroom-ai/core OCR/rules/names/faces in a Worker
       ├► tracker: IoU + text similarity + scroll shift + interpolation
       ├► review UI + manual boxes
-      └► canvas burn-in export ─► OCR verification on output samples
+      └► canvas burn-in WebM export + Opus audio ─► dense OCR verification on decoded output
 ```
 
 Blur and pixelation are offered for demos, but **black boxes are the safe default for text**.
@@ -85,9 +85,9 @@ Then open the printed local URL. Set `ONNXRUNTIME_NODE_INSTALL_CUDA=skip` when i
 
 ## Limitations
 
-- Sampling can miss text visible for less than ~0.5s; scene-change sampling mitigates bursts but cannot guarantee every transient frame.
-- Browser support for WebCodecs/MediaRecorder codecs varies. The app falls back to VP8/VP9 WebM when H.264/MP4 recording is unavailable.
-- The current safe fallback exporter drops audio rather than risking unsynchronized or decoded audio; the UI tells you when that happens.
+- Sampling can still miss text visible between dense OCR samples; scene-change/frame-diff cues help but cannot guarantee every transient frame.
+- Browser support for WebCodecs codecs varies. The app exports VP8/VP9 WebM when the browser can encode it.
+- Audio is preserved but **not redacted**; use the cleanroom-ai Audio Redactor before sharing recordings with spoken secrets or personal information.
 - Always review: OCR can miss tiny, blurry, stylized, or heavily animated text.
 
 <!-- cleanroom-ai:family:start -->

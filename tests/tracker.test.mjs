@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { activeDetections, boxAt, buildTracks, downscaleGray, estimateShift, frameDifference, iou, isSceneChange, mergeBoxes, sampleTimes, textSimilarity } from "../js/tracker.js";
+import { activeDetections, boxAt, buildTracks, downscaleGray, estimateShift, frameDifference, framePlan, iou, isSceneChange, mergeBoxes, sampleTimes, textSimilarity, verificationTimes } from "../js/tracker.js";
 
 const det = (t, x, y, text = ["sk", "proj"].join("-") + "-abc") => ({ t, detections: [{ category: "secrets", label: "AI_API_KEY", text, source: "rule", box: { x0: x, y0: y, x1: x + 100, y1: y + 24 } }] });
 
@@ -61,3 +61,22 @@ test("time-range filtering and box merging return active redactions only", () =>
   assert.equal(sampleTimes(1.1, 0.5).at(-1), 1.05);
 });
 
+test("default OCR sample schedule covers short-lived between-sample text", () => {
+  const times = sampleTimes(2);
+  assert.ok(times.includes(0.75), `expected 0.75s OCR sample in ${times}`);
+  assert.ok(Math.max(...times.slice(1).map((t, i) => Number((t - times[i]).toFixed(3)))) <= 0.25);
+});
+
+test("export frame plan preserves input frame count and duration", () => {
+  const frames = framePlan(2, 30);
+  assert.equal(frames.length, 60);
+  assert.equal(frames[0].timestamp, 0);
+  assert.equal(Number((frames.at(-1).timestamp + frames.at(-1).duration).toFixed(3)), 2);
+});
+
+test("verification scans whole output even with zero selected tracks", () => {
+  const times = verificationTimes(2, 2, []);
+  assert.ok(times.length > 1);
+  assert.ok(times.includes(0.75));
+  assert.ok(times.at(-1) >= 1.9);
+});

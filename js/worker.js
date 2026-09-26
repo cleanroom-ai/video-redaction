@@ -41,10 +41,12 @@ self.onmessage = async ({ data: msg }) => {
       const input = new Input({ source: new BlobSource(msg.file), formats: ALL_FORMATS });
       const video = await input.getPrimaryVideoTrack();
       const audio = await input.getPrimaryAudioTrack();
+      const frameRate = video ? await video.computeFrameRateMetrics({ targetPacketCount: 256 }).then((m) => m.bestGuessFrameRate).catch(() => null) : null;
       const info = {
         duration: await input.computeDuration().catch(() => null),
         width: video ? await video.getDisplayWidth().catch(() => null) : null,
         height: video ? await video.getDisplayHeight().catch(() => null) : null,
+        frameRate,
         videoCodec: video ? await video.getCodec().catch(() => "unknown") : null,
         audioCodec: audio ? await audio.getCodec().catch(() => null) : null,
         hasAudio: Boolean(audio),

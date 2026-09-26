@@ -52,7 +52,7 @@ try {
   assert.ok((await page.locator("#tracks li .name").allInnerTexts()).some((t) => t.includes("Your box")), "manual box added");
 
   await page.getByRole("button", { name: "Export redacted video" }).click({ force: true });
-  await page.locator("#verify").filter({ hasText: "Verified" }).waitFor({ timeout: 300_000 });
+  await page.locator("#verify").filter({ hasText: /Verified|Verification found/ }).waitFor({ timeout: 300_000 });
   const exportStatus = await page.locator("#export-status").innerText();
   const verify = await page.locator("#verify").innerText();
   console.log(`export: ${exportStatus}`);
@@ -79,6 +79,32 @@ try {
     assert.ok(!readable.includes(fakeAwsKey), `redacted output still readable: ${readable}`);
     assert.ok(!readable.toLowerCase().includes(fakeEmail), `redacted output still readable: ${readable}`);
     console.log("node verify: ffmpeg frame OCR contains no fake key/email");
+
+    const audioIn = join(shotsDir, "audio-fixture.mp4");
+    const made = spawnSync("ffmpeg", [
+      "-y", "-hide_banner", "-loglevel", "error",
+      "-f", "lavfi", "-i", "color=c=white:s=640x360:r=30:d=2",
+      "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:d=2",
+      "-vf", "drawtext=text='vid-audio@example.test':x=80:y=160:fontsize=36:fontcolor=black:box=1:boxcolor=white",
+      "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", audioIn,
+    ], { stdio: "inherit" });
+    assert.equal(made.status, 0, "ffmpeg generated audio/video fixture");
+    await page.locator("#reset").click();
+    await page.locator("#file").setInputFiles(audioIn);
+    await page.locator("#status[data-kind=ok], #status[data-kind=warn]").waitFor({ timeout: 240_000 });
+    assert.ok((await page.locator("#tracks li .name").allInnerTexts()).some((t) => t.includes("Email")), "audio fixture email detected");
+    await page.getByRole("button", { name: "Export redacted video" }).click({ force: true });
+    await page.locator("#verify").filter({ hasText: "Verified" }).waitFor({ timeout: 300_000 });
+    const [audioDownload] = await Promise.all([page.waitForEvent("download"), page.locator("#download").click()]);
+    const audioOut = join(shotsDir, `audio-${audioDownload.suggestedFilename()}`);
+    await audioDownload.saveAs(audioOut);
+    const meta = ffprobe(audioOut);
+    assert.ok(meta.streams.some((s) => s.codec_type === "audio"), "redacted export keeps an audio stream");
+    assert.ok(Math.abs(Number(meta.format.duration) - 2) < 0.15, `export duration stayed near input: ${meta.format.duration}`);
+    const rate = meta.streams.find((s) => s.codec_type === "video")?.avg_frame_rate || "0/1";
+    const [num, den] = rate.split("/").map(Number);
+    assert.ok(Math.abs(num / den - 30) <= 1, `export frame rate stayed near 30fps: ${rate}`);
+    console.log("node verify: audio export keeps audio stream and timing");
   }
   await finish();
   finished = true;
@@ -90,4 +116,10 @@ try {
     await Promise.race([app.browser.close(), new Promise((r) => setTimeout(r, 5000))]).catch(() => {});
   }
   process.exit(process.exitCode || 0);
+}
+
+function ffprobe(path) {
+  const r = spawnSync("ffprobe", ["-v", "error", "-show_streams", "-show_format", "-of", "json", path], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  return JSON.parse(r.stdout);
 }

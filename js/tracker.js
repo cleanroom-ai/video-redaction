@@ -1,4 +1,5 @@
 export const HOLD_MARGIN = 0.8;
+export const DEFAULT_SAMPLE_INTERVAL = 0.25;
 
 export function iou(a, b) {
   const x0 = Math.max(a.x0, b.x0), y0 = Math.max(a.y0, b.y0);
@@ -154,11 +155,36 @@ export function estimateShift(prev, curr, maxShift = 8) {
   return best;
 }
 
-export function sampleTimes(duration, every = 0.5) {
+export function sampleTimes(duration, every = DEFAULT_SAMPLE_INTERVAL) {
   const times = [0];
   for (let t = every; t < duration - 0.05; t += every) times.push(Number(t.toFixed(3)));
   if (duration > 0.1) times.push(Math.max(0, duration - 0.05));
   return [...new Set(times)];
+}
+
+export function framePlan(duration, fps = 30) {
+  const rate = clampFrameRate(fps);
+  const total = Math.max(1, Math.round(Math.max(0.001, duration) * rate));
+  const step = 1 / rate;
+  return Array.from({ length: total }, (_, i) => {
+    const timestamp = Number((i * step).toFixed(6));
+    const remaining = Math.max(0.001, duration - timestamp);
+    return { index: i, timestamp, duration: Number(Math.min(step, remaining).toFixed(6)) };
+  });
+}
+
+export function verificationTimes(inputDuration, outputDuration = inputDuration, sampledTimes = [], every = DEFAULT_SAMPLE_INTERVAL) {
+  const outDuration = Math.max(0.001, outputDuration || inputDuration || 0.001);
+  const scale = outDuration / Math.max(0.001, inputDuration || outDuration);
+  const times = [
+    ...sampleTimes(outDuration, every),
+    ...sampledTimes.map((t) => Math.min(Math.max(0, t * scale), Math.max(0, outDuration - 0.05))),
+  ];
+  return [...new Set(times.map((t) => Number(t.toFixed(3))))].sort((a, b) => a - b);
+}
+
+export function clampFrameRate(fps) {
+  return Math.min(120, Math.max(1, Number.isFinite(fps) && fps > 0 ? fps : 30));
 }
 
 export function mergeBoxes(boxes, threshold = 0.65) {
@@ -172,4 +198,3 @@ export function mergeBoxes(boxes, threshold = 0.65) {
 }
 
 const lerp = (a, b, p) => a + (b - a) * p;
-
