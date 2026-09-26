@@ -24,7 +24,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     env:
       E2E_BROWSER: chromium
-      URL: ${{ github.event.inputs.url || vars.LIVE_CHECK_URL || 'https://cleanroom-ai-video-redaction.hf.space/' }}
+      URL: ${{ github.event.inputs.url || vars.LIVE_CHECK_URL || 'https://screenshot-redactor-video-redaction.static.hf.space/' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -42,3 +42,4 @@ jobs:
           name: live-e2e-screenshots
           path: .cache/e2e/
           if-no-files-found: ignore
+
