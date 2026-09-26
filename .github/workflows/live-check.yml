@@ -6,7 +6,7 @@ on:
       url:
         description: Live Space URL
         required: false
-        default: https://huggingface.co/spaces/cleanroom-ai/video-redaction
+        default: https://cleanroom-ai-video-redaction.static.hf.space/
   workflow_run:
     workflows: ["Deploy to Hugging Face Space"]
     types: [completed]
