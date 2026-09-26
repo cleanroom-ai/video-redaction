@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- The page may only load its own files: from this origin, or from Hugging Face's CDN (*.hf.co), which serves this Space's large files. No third-party CDNs or analytics, and nothing is ever uploaded (form-action none; the tests assert zero requests carrying data). -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' blob: 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' blob: data: https://*.hf.co; img-src 'self' blob: data: https://*.hf.co; media-src 'self' blob: data: https://*.hf.co; style-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>Video Redactor — hide secrets in screen recordings</title>
+  <meta name="description" content="Hide keys, names and faces in screen recordings. Runs entirely in your browser; your video is never uploaded.">
+  <link rel="icon" href="favicon.ico" sizes="48x48">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <link rel="manifest" href="assets/site.webmanifest">
+  <meta name="theme-color" content="#312e81">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Video Redactor">
+  <meta property="og:description" content="Hide keys, names & faces in screen recordings — in your browser.">
+  <meta property="og:url" content="https://huggingface.co/spaces/cleanroom-ai/video-redaction">
+  <meta property="og:image" content="https://cleanroom-ai-video-redaction.static.hf.space/assets/social-preview.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="vendor/core/theme.css">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <img class="logo" src="assets/icon.svg" width="44" height="44" alt="">
+      <div>
+        <h1>Video Redactor <a class="family" href="https://github.com/paragpsawant" target="_blank" rel="noopener noreferrer">cleanroom-ai</a></h1>
+        <p class="tag">Hide keys, names &amp; faces in screen recordings — in your browser.</p>
+      </div>
+    </div>
+    <p class="privacy">🔒 Runs 100% in your browser. Your video is never uploaded.</p>
+  </header>
+
+  <main>
+    <section id="drop" class="drop" tabindex="0" role="button" aria-label="Choose or drop a video">
+      <input id="file" type="file" accept="video/mp4,video/webm,video/*" hidden>
+      <div class="drop-inner">
+        <div class="drop-icon" aria-hidden="true">▣</div>
+        <p class="drop-title">Drop a screen recording here, or click to choose</p>
+        <p class="drop-sub">MP4 (H.264/AAC) and WebM (VP8/VP9/AV1) when your browser can decode them. The app samples frames, tracks sensitive regions, lets you review, then burns redactions into a new video.</p>
+        <div class="examples"><span>Try an example (fake data):</span><button id="example" type="button">Try an example (fake data)</button></div>
+      </div>
+    </section>
+
+    <section id="workspace" class="workspace" hidden>
+      <div class="viewer">
+        <div class="toolbar">
+          <div class="tabs" role="tablist" aria-label="Video view">
+            <button role="tab" id="tab-preview" aria-controls="panel-preview" aria-selected="true">Preview &amp; review</button>
+            <button role="tab" id="tab-output" aria-controls="panel-output" aria-selected="false">Export</button>
+          </div>
+          <div class="actions">
+            <button id="rescan" type="button">Scan again</button>
+            <button id="export" type="button" class="primary">Export redacted video</button>
+            <button id="cancel" type="button" hidden>Cancel</button>
+          </div>
+        </div>
+        <p id="status" class="status" role="status" aria-live="polite"></p>
+        <div id="panel-preview" role="tabpanel" aria-labelledby="tab-preview" class="panel">
+          <div class="video-wrap">
+            <video id="video" controls playsinline muted></video>
+            <canvas id="overlay" class="overlay" aria-label="Tracked redaction boxes; drag to add a box"></canvas>
+          </div>
+          <p class="hint"><strong>Drag on the video</strong> to add a manual redaction. Click a timeline bar to seek.</p>
+          <div id="timeline" class="timeline" aria-label="Redaction timeline"></div>
+        </div>
+        <div id="panel-output" role="tabpanel" aria-labelledby="tab-output" class="panel" hidden>
+          <div class="progress"><div id="bar"></div></div>
+          <p id="export-status" class="muted">Export has not started.</p>
+          <p id="verify" class="verify"></p>
+          <p><a id="download" class="download" hidden>Download redacted video</a></p>
+          <canvas id="export-canvas" hidden></canvas>
+        </div>
+      </div>
+
+      <aside class="side">
+        <div class="card">
+          <div class="card-head"><h2>Tracked items</h2><span class="mini"><button id="select-all" type="button">all</button> · <button id="select-none" type="button">none</button></span></div>
+          <ul id="tracks" class="detections"></ul>
+          <p id="tracks-empty" class="muted">Nothing yet.</p>
+        </div>
+        <div class="card">
+          <h2>Manual box range</h2>
+          <label class="check"><input type="radio" name="manual-range" value="whole" checked> Whole video</label>
+          <label class="check"><input type="radio" name="manual-range" value="from-here"> From current time to end</label>
+        </div>
+        <div class="card">
+          <h2>Style</h2>
+          <div class="styles">
+            <label><input type="radio" name="style" value="black box" checked> Black box</label>
+            <label><input type="radio" name="style" value="pixelate"> Pixelate</label>
+            <label><input type="radio" name="style" value="blur"> Blur</label>
+          </div>
+          <p id="style-note" class="note" hidden>⚠️ Blur and pixelation are not safe for text. Use black boxes for secrets.</p>
+        </div>
+        <details class="card" open>
+          <summary><h2>What to find</h2></summary>
+          <div id="categories" class="categories"></div>
+          <label class="field">Also hide these words <span class="muted">(comma-separated)</span><input id="terms" type="text" placeholder="e.g. Contoso, Project Falcon" autocomplete="off"></label>
+          <label class="check"><input id="use-ner" type="checkbox"> Use the on-device name/address AI model <span class="muted">(slower, one-time download)</span></label>
+        </details>
+        <button id="reset" type="button" class="wide ghost">← New video</button>
+      </aside>
+    </section>
+  </main>
+
+  <footer>
+    <p id="engine" class="engine">Starting engine…</p>
+    <p class="muted">Built by <a href="https://github.com/paragpsawant" target="_blank" rel="noopener noreferrer">Parag Sawant</a> · <a href="https://github.com/paragpsawant/video-redaction" target="_blank" rel="noopener noreferrer">Source on GitHub</a> · part of cleanroom-ai · Apache-2.0</p>
+  </footer>
+</body>
+</html>

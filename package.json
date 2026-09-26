@@ -1,0 +1,22 @@
+{
+  "name": "video-redaction",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "vendor": "node scripts/vendor.mjs",
+    "icons": "node node_modules/@cleanroom-ai/core/scripts/render-icons.mjs . \"Video Redactor\" \"Hide keys, names & faces|in screen recordings\"",
+    "examples": "node scripts/make-examples.mjs",
+    "test": "node --test \"tests/*.test.mjs\"",
+    "serve": "node node_modules/@cleanroom-ai/core/scripts/serve.mjs ."
+  },
+  "dependencies": {
+    "@cleanroom-ai/core": "github:paragpsawant/cleanroom-core#v0.1.2",
+    "mediabunny": "1.58.0"
+  },
+  "devDependencies": {
+    "@huggingface/transformers": "4.3.0",
+    "onnxruntime-node": "1.30.0",
+    "onnxruntime-web": "1.30.0",
+    "playwright-core": "1.63.0"
+  }
+}

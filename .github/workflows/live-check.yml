@@ -1,0 +1,44 @@
+name: Live check
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Live Space URL
+        required: false
+        default: https://huggingface.co/spaces/cleanroom-ai/video-redaction
+  workflow_run:
+    workflows: ["Deploy to Hugging Face Space"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+env:
+  ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+
+jobs:
+  live-e2e:
+    name: Live Space E2E
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    env:
+      E2E_BROWSER: chromium
+      URL: ${{ github.event.inputs.url || vars.LIVE_CHECK_URL || 'https://cleanroom-ai-video-redaction.hf.space/' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: npm ci
+      - run: npx playwright-core install --with-deps chromium
+      - name: Run browser test against live Space
+        run: node tests/e2e.browser.mjs "$URL"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-e2e-screenshots
+          path: .cache/e2e/
+          if-no-files-found: ignore
