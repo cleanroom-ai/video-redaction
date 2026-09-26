@@ -37,7 +37,7 @@ tags:
 
 <p align="center"><img src="assets/icon.svg" width="112" height="112" alt="Video Redactor logo"></p>
 
-[![CI](https://github.com/paragpsawant/video-redaction/actions/workflows/ci.yml/badge.svg)](https://github.com/paragpsawant/video-redaction/actions/workflows/ci.yml)
+[![CI](https://github.com/cleanroom-ai/video-redaction/actions/workflows/ci.yml/badge.svg)](https://github.com/cleanroom-ai/video-redaction/actions/workflows/ci.yml)
 [Open the Hugging Face demo](https://huggingface.co/spaces/cleanroom-ai/video-redaction)
 
 **Hide keys, names & faces in screen recordings — in your browser.**
@@ -47,7 +47,7 @@ Video Redactor is a 100% client-side cleanroom-ai app for developers and PMs who
 ## Features
 
 - Drop MP4/WebM or try the bundled synthetic example (fake data only).
-- Uses the shared [`@cleanroom-ai/core`](https://github.com/paragpsawant/cleanroom-core) OCR/rules/name/face engine.
+- Uses the shared [`@cleanroom-ai/core`](https://github.com/cleanroom-ai/cleanroom-core) OCR/rules/name/face engine.
 - Samples every ~0.5s and tracks boxes between samples with IoU, text similarity, scroll-shift estimation, and face interpolation.
 - Review numbered boxes over the video, timeline bars, per-track checkboxes, masked previews, and manual boxes.
 - Exports a redacted WebM/MP4 candidate in-browser and verifies sampled output frames with OCR/rules.
@@ -89,6 +89,25 @@ Then open the printed local URL. Set `ONNXRUNTIME_NODE_INSTALL_CUDA=skip` when i
 - Browser support for WebCodecs/MediaRecorder codecs varies. The app falls back to VP8/VP9 WebM when H.264/MP4 recording is unavailable.
 - The current safe fallback exporter drops audio rather than risking unsynchronized or decoded audio; the UI tells you when that happens.
 - Always review: OCR can miss tiny, blurry, stylized, or heavily animated text.
+
+<!-- cleanroom-ai:family:start -->
+## Part of cleanroom-ai
+
+**Clean it before you share it.** Six free privacy tools built on one shared engine. Every model runs
+in your browser, so nothing you open is ever uploaded.
+
+| | Tool | Cleans | Demo | Code |
+|---|---|---|---|---|
+| 🕶️ | **Screenshot Redactor** | API keys, passwords, emails, card numbers, names, faces & QR codes in screenshots | [▶ Try it](https://huggingface.co/spaces/cleanroom-ai/pii-privacy-redaction) | [GitHub](https://github.com/cleanroom-ai/screenshot-redactor) |
+| 🧽 | **Log Scrubber** | tokens, cookies, passwords & PII in logs, `.env`, JSON and HAR files | [▶ Try it](https://huggingface.co/spaces/cleanroom-ai/log-secret-scrubber) | [GitHub](https://github.com/cleanroom-ai/log-secret-scrubber) |
+| 📄 | **PDF Redactor** | PII & secrets in PDFs, flattened and verified so no text survives | [▶ Try it](https://huggingface.co/spaces/cleanroom-ai/pdf-redaction) | [GitHub](https://github.com/cleanroom-ai/pdf-redaction) |
+| 🔊 | **Audio Redactor** | bleeps names, phone & card numbers and secrets in recordings | [▶ Try it](https://huggingface.co/spaces/cleanroom-ai/audio-pii-redaction) | [GitHub](https://github.com/cleanroom-ai/audio-pii-redaction) |
+| 📷 | **Photo Share-Safe** | GPS & hidden EXIF metadata; blurs faces and license plates | [▶ Try it](https://huggingface.co/spaces/cleanroom-ai/photo-exif-privacy) | [GitHub](https://github.com/cleanroom-ai/photo-exif-privacy) |
+| 🎬 | **Video Redactor** 📍 *you are here* | keys, names, emails & faces tracked through screen recordings | [▶ Try it](https://huggingface.co/spaces/cleanroom-ai/video-redaction) | [GitHub](https://github.com/cleanroom-ai/video-redaction) |
+| ⚙️ | **@cleanroom-ai/core** | the shared on-device engine: OCR, secret/PII rules, NER, face detection | — | [GitHub](https://github.com/cleanroom-ai/cleanroom-core) |
+
+All tools: [Hugging Face](https://huggingface.co/cleanroom-ai) · [GitHub](https://github.com/cleanroom-ai)
+<!-- cleanroom-ai:family:end -->
 
 ## Author
 
