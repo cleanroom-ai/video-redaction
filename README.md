@@ -1,11 +1,11 @@
 ---
 title: Video Redactor
 emoji: 🎬
-colorFrom: gray
-colorTo: indigo
+colorFrom: pink
+colorTo: gray
 sdk: static
 app_file: index.html
-pinned: false
+pinned: true
 license: apache-2.0
 short_description: "Redact keys, names & faces in screen recordings"
 thumbnail: https://huggingface.co/spaces/cleanroom-ai/video-redaction/resolve/main/assets/social-preview.png
